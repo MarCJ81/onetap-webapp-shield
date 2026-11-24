@@ -1,0 +1,14 @@
+{
+  "name": "원탭 웹앱 실드 — 웹앱 보안 검사·자동 방어",
+  "short_name": "웹앱 실드",
+  "description": "AI로 만든 웹앱의 시크릿 유출·RLS 누락·XSS·CORS를 검사하고 보안 헤더·CSP·CI 규칙을 생성합니다.",
+  "lang": "ko",
+  "start_url": "https://marcj81.github.io/onetap-webapp-shield/",
+  "scope": "https://marcj81.github.io/onetap-webapp-shield/",
+  "display": "standalone",
+  "background_color": "#07090C",
+  "theme_color": "#07090C",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
