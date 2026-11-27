@@ -13,7 +13,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var SECURITY_HEADERS = [
     { key: 'content-security-policy', label: 'CSP', weight: 30, sev: 'high' },
     { key: 'strict-transport-security', label: 'HSTS', weight: 20, sev: 'medium' },
@@ -192,6 +192,186 @@
     return false;
   }
 
+  /* ── 배포 URL 실측: Worker 프록시 ───────────────────────────────────────
+     브라우저는 다른 오리진의 응답 헤더를 CORS로 읽지 못한다. 그래서 무료
+     Cloudflare Worker(onetap-shield-probe)가 대신 확인해 JSON으로 돌려준다.
+     Worker는 허용 출처만 받고, 사설·메타데이터 주소(SSRF)는 거부하며,
+     원문 본문은 돌려주지 않고 시크릿은 가려서(masked)만 보낸다. */
+
+  var PROBE_WORKER = 'https://onetap-shield-probe.onetap-ai.workers.dev';
+
+  var HEADER_EASY = {
+    'content-security-policy': '브라우저가 실행해도 되는 스크립트를 미리 정해두는 허용 목록이에요. 목록에 없는 스크립트는 실행되지 않습니다.',
+    'strict-transport-security': '이 사이트에는 앞으로 항상 암호화된 https로만 접속하라고 브라우저에 기억시키는 장치예요.',
+    'x-content-type-options': '파일 종류를 브라우저가 마음대로 추측해서 실행하지 않게 하는 잠금장치예요.',
+    'x-frame-options': '다른 사이트가 내 화면을 몰래 액자처럼 끼워 넣는 걸 막는 잠금장치예요.',
+    'referrer-policy': '다른 사이트로 넘어갈 때 내 주소·경로를 얼마나 알려줄지 정하는 규칙이에요.',
+    'permissions-policy': '카메라·위치·마이크 같은 기능을 이 사이트가 쓸 수 있는지 정하는 스위치예요.'
+  };
+
+  /* 로컬·사설 주소인가? 그렇다면 실측 서버(공인 인터넷)로는 확인할 수 없어
+     브라우저가 직접 확인한다. 서버에 400을 보내 콘솔을 어지럽히지 않기 위함. */
+  function isPrivateTarget(input) {
+    var u = normalizeUrl(input);
+    if (!u) return true;
+    var h = u.hostname.toLowerCase();
+    if (h === 'localhost' || /\.localhost$/.test(h)) return true;
+    if (/\.local$|\.internal$|\.home\.arpa$/.test(h)) return true;
+    var v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4) {
+      var a = Number(v4[1]), b = Number(v4[2]);
+      if (a === 0 || a === 10 || a === 127) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 100 && b >= 64 && b <= 127) return true;
+    }
+    if (h.charAt(0) === '[') return true;
+    if (/^\d+$/.test(h)) return true;
+    return false;
+  }
+
+  function headerScoreOf(headers) {
+    var earned = 0;
+    SECURITY_HEADERS.forEach(function (h) { if (headers && headers[h.key]) earned += h.weight; });
+    return earned;
+  }
+
+  function workerFindings(p) {
+    var out = [];
+    var target = p.finalUrl || p.target || '';
+
+    SECURITY_HEADERS.forEach(function (h) {
+      if (p.headers && p.headers[h.key]) return;
+      out.push({
+        ruleId: 'header-' + h.key, name: '보안 헤더 누락: ' + h.label, sev: h.sev, cat: 'config', kind: 'remote',
+        path: target, line: 1, snippet: '',
+        note: '실제 응답에 ' + h.label + ' 헤더가 없습니다(Worker 실측).',
+        why: '헤더가 없으면 브라우저의 기본 방어(스크립트 제한·MIME 검사·클릭재킹 차단·리퍼러 최소화)가 작동하지 않습니다.',
+        fix: '방어팩에서 이 호스팅에 맞는 헤더 파일을 생성해 배포하세요.',
+        easy: HEADER_EASY[h.key] || '', easyKey: h.key,
+        cwe: 'CWE-693', refs: ['https://developer.mozilla.org/ko/docs/Web/HTTP/Headers']
+      });
+    });
+
+    (p.probes || []).forEach(function (pr) {
+      if (pr.status !== 'exposed') return;
+      var isEnv = /\.env/.test(pr.path);
+      var isGit = /\.git\/HEAD/.test(pr.path);
+      out.push({
+        ruleId: isEnv ? 'remote-env-exposed' : isGit ? 'remote-git-exposed' : 'remote-file-exposed',
+        name: isEnv ? '.env 환경변수 파일이 공개 노출' : isGit ? '.git 저장소 정보 노출' : 'package.json 공개',
+        sev: isEnv ? 'critical' : isGit ? 'high' : 'low',
+        cat: 'config', kind: 'remote',
+        path: pr.url || (target + '/' + pr.path), line: 1,
+        snippet: pr.contentType ? ('HTTP ' + pr.httpStatus + ' · ' + pr.contentType) : ('HTTP ' + pr.httpStatus),
+        note: '주소창에 그대로 입력해도 ' + pr.path + ' 이(가) 내려받아집니다.',
+        why: isEnv
+          ? '서버 설정과 API 키가 담긴 파일을 누구나 내려받을 수 있습니다. 열쇠를 문 앞에 놓고 나간 셈입니다.'
+          : isGit ? '저장소 주소와 커밋 정보가 드러나 소스 복원 시도로 이어질 수 있습니다.'
+          : '의존성·스크립트·내부 패키지 이름이 그대로 드러납니다.',
+        fix: isEnv
+          ? '.env를 웹 루트 밖으로 옮기고 서버에서 404로 막으세요. 이미 노출된 키는 모두 교체(revoke)해야 합니다.'
+          : '배포 폴더에서 이 파일을 빼고, 서버 설정으로 404를 반환하게 하세요.',
+        cwe: 'CWE-538', refs: []
+      });
+    });
+
+    var en = !!(typeof window !== 'undefined' && window.ONETAP_I18N && window.ONETAP_I18N.lang && window.ONETAP_I18N.lang() === 'en');
+    var SECRET_LABEL_EN = {
+      'google-api-key': 'Google API key',
+      'openai-key': 'OpenAI API key',
+      'stripe-key': 'Stripe key',
+      'github-token': 'GitHub token',
+      'aws-access-key': 'AWS access key',
+      'slack-token': 'Slack token',
+      'supabase-secret': 'Supabase service_role key',
+      'pem-private-key': 'private key (PEM)',
+      'anthropic-key': 'Anthropic API key',
+      'jwt-token': 'JWT token'
+    };
+    (p.secrets || []).forEach(function (s, i) {
+      var label = en ? (SECRET_LABEL_EN[s.id] || 'API key') : (s.label || 'API 키');
+      out.push({
+        ruleId: 'remote-live-secret-' + s.id, name: (en ? 'Key exposed in the deployed page: ' : '배포 화면에 키 노출: ') + label,
+        sev: s.sev === 'low' ? 'low' : 'critical', cat: 'secret', kind: 'remote',
+        path: s.where === 'html' ? target : (s.where || target), line: 1 + i,
+        snippet: s.masked || '',
+        note: s.where === 'html' ? '배포된 HTML 안에서 발견했습니다(Worker 실측).' : '같은 도메인의 스크립트에서 발견했습니다.',
+        why: '누구나 볼 수 있는 화면에 키가 박혀 있으면, 그 키로 바로 서비스를 호출해 요금을 쓰게 만들 수 있습니다.',
+        fix: '해당 키를 즉시 폐기(revoke)하고, 서버나 환경변수에서만 쓰도록 옮기세요. 프론트에 넣어야 하는 공개 키(anon key)라면 RLS로 권한을 막아야 합니다.',
+        easy: '비밀 열쇠를 누구나 보는 게시판에 붙여둔 상태예요. 지우는 것만으로는 늦고, 열쇠를 새로 발급해야 합니다.',
+        cwe: 'CWE-798', refs: []
+      });
+    });
+
+    if (p.page && p.page.sourceMap) {
+      out.push({
+        ruleId: 'remote-sourcemap', name: '배포본 HTML/JS에 소스맵 참조', sev: 'low', cat: 'git', kind: 'remote',
+        path: target, line: 1, snippet: 'sourceMappingURL',
+        note: '', why: '소스맵이 공개되면 원본 소스와 내부 구조가 그대로 노출됩니다.',
+        fix: '프로덕션에서 sourcemap을 끄거나 접근을 차단하세요.', cwe: 'CWE-540', refs: []
+      });
+    }
+
+    return out;
+  }
+
+  function normalizeWorkerProbe(p, u) {
+    var headers = {};
+    SECURITY_HEADERS.forEach(function (h) { headers[h.key] = (p.headers && p.headers[h.key]) || ''; });
+    var out = {
+      ok: true, via: 'worker', target: p.target || u.href, origin: u.origin,
+      sameOrigin: false, headerStatus: 'checked', headers: headers,
+      headerScore: headerScoreOf(headers), headerCount: p.headerCount || 0,
+      httpStatus: p.httpStatus, finalUrl: p.finalUrl || u.href,
+      probes: (p.probes || []).map(function (pr) {
+        return { path: (pr.path || '').replace(/^\//, ''), url: pr.url, status: pr.status, httpStatus: pr.httpStatus, bytes: pr.bytes || 0, contentType: pr.contentType || '' };
+      }),
+      scripts: p.scripts || [], secrets: p.secrets || [], page: p.page || {},
+      redirectProblem: p.redirectProblem || '', elapsedMs: p.elapsedMs || 0,
+      note: p.note || '', fetchedAt: new Date().toISOString()
+    };
+    out.findings = workerFindings(out);
+    return out;
+  }
+
+  async function probeViaWorker(input, opts) {
+    opts = opts || {};
+    var u = normalizeUrl(input);
+    if (!u) return { ok: false, message: 'http(s) 주소 형식이 아닙니다.' };
+    var endpoint = opts.worker || PROBE_WORKER;
+    var ctrl = null, timer = null;
+    try {
+      if (typeof AbortController !== 'undefined') {
+        ctrl = new AbortController();
+        timer = setTimeout(function () { ctrl.abort(); }, opts.timeout || 30000);
+      }
+      var res = await fetch(endpoint + '/probe?url=' + encodeURIComponent(u.href), {
+        method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store',
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      var data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+      if (res.status === 403 && data && data.error === 'origin_not_allowed') {
+        return { ok: false, reason: 'origin', message: '실측 서버가 이 페이지의 출처를 허용하지 않습니다(배포 도메인에서만 동작).' };
+      }
+      if (!data) return { ok: false, reason: 'bad_response', message: '실측 서버 응답을 이해하지 못했습니다(HTTP ' + res.status + ').' };
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false, reason: data.error || ('http_' + res.status),
+          message: data.message || ('실측 서버 오류(HTTP ' + res.status + ')'),
+          blockedTarget: /^(loopback|private|metadata|cgnat|reserved|numeric|single_label|blocked_port|bad_scheme|credentials)/.test(data.error || '')
+        };
+      }
+      return normalizeWorkerProbe(data, u);
+    } catch (e) {
+      return { ok: false, reason: 'network', message: '실측 서버에 연결하지 못했습니다(네트워크).' };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   /* ── GitHub 저장소 ──────────────────────────────────────────────────── */
 
   function parseRepo(input) {
@@ -358,8 +538,13 @@
     VERSION: VERSION,
     SECURITY_HEADERS: SECURITY_HEADERS,
     PROBE_PATHS: PROBE_PATHS,
+    PROBE_WORKER: PROBE_WORKER,
+    HEADER_EASY: HEADER_EASY,
     normalizeUrl: normalizeUrl,
     probeUrl: probeUrl,
+    probeViaWorker: probeViaWorker,
+    isPrivateTarget: isPrivateTarget,
+    headerScoreOf: headerScoreOf,
     parseRepo: parseRepo,
     scanRepo: scanRepo,
     confirmExposure: confirmExposure

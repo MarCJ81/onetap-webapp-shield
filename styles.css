@@ -335,6 +335,33 @@ h1 em { font-style: normal; color: var(--brand); }
 .source-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .auto-note { font-size: 11px; color: var(--ink-4); font-family: var(--mono); }
 
+/* ── 3단계 흐름 ──────────────────────────────────────────────────────── */
+.steps {
+  list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; margin: 0 0 12px; padding: 0;
+}
+.step {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 8px 11px; border-radius: var(--r-md); border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-4); font-size: 12px;
+  transition: .15s;
+}
+.step b {
+  flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  background: var(--surface-3); color: var(--ink-3); border: 1px solid var(--line);
+}
+.step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step.is-now { color: var(--ink); border-color: var(--brand-line); background: var(--brand-soft); }
+.step.is-now b { background: var(--brand); color: #05130F; border-color: transparent; }
+.step.is-done { color: var(--ink-2); background: var(--surface-2); }
+.step.is-done b { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+@media (max-width: 640px) {
+  .steps { grid-template-columns: 1fr; gap: 5px; margin-bottom: 10px; }
+  .step { padding: 6px 9px; font-size: 11.5px; }
+}
+
+
 .preset-wrap { position: relative; }
 .preset-menu {
   position: absolute; right: 0; top: calc(100% + 7px); z-index: 40;
@@ -440,23 +467,48 @@ h1 em { font-style: normal; color: var(--brand); }
 .status-line.is-ok { color: var(--ok); }
 
 .url-result { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.url-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
 .hdr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .hdr-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 6px 9px; border-radius: 7px; background: var(--surface-2);
-  border: 1px solid var(--line); font-size: 11.5px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 7px 9px 8px; border-radius: 8px; background: var(--surface-2);
+  border: 1px solid var(--line); font-size: 11.5px; min-width: 0;
 }
-.hdr-item .hname { font-family: var(--mono); color: var(--ink-3); font-size: 10.8px; }
+.hdr-main { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hdr-item .hname { font-family: var(--mono); color: var(--ink-2); font-size: 10.8px; }
 .hdr-item .hstate { font-weight: 700; font-size: 10.5px; }
 .hdr-item.ok .hstate { color: var(--ok); }
 .hdr-item.miss .hstate { color: var(--critical); }
 .hdr-item.unk .hstate { color: var(--medium); }
+.hdr-item .heasy { color: var(--ink-4); font-size: 10.6px; line-height: 1.45; }
+.hdr-item .hval {
+  font-family: var(--mono); font-size: 9.8px; color: var(--ink-3);
+  background: var(--surface-3); border-radius: 5px; padding: 2px 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.easy-note { line-height: 1.55; }
+.url-facts { display: flex; flex-wrap: wrap; gap: 5px; align-items: baseline; }
 .probe-list { display: flex; flex-direction: column; gap: 5px; }
-.probe-row { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.probe-row { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); flex-wrap: wrap; }
 .probe-row .pstat { font-size: 10px; padding: 1px 6px; border-radius: 5px; font-family: var(--font); font-weight: 600; }
 .probe-row .pstat.exposed { background: var(--critical-soft); color: var(--critical); }
 .probe-row .pstat.blocked { background: var(--ok-soft); color: var(--ok); }
 .probe-row .pstat.unknown, .probe-row .pstat.unconfirmed { background: var(--surface-3); color: var(--ink-3); }
+.probe-row .pcode { color: var(--ink-4); font-size: 10px; }
+.probe-row .script-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+
+/* 용어 쉽게 보기 */
+.glossary { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 7px 10px; }
+.glossary summary { cursor: pointer; font-size: 11.5px; color: var(--ink-2); font-weight: 600; }
+.glossary[open] summary { margin-bottom: 7px; }
+.gloss-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 0; font-size: 11px; }
+.gloss-list dt { font-family: var(--mono); color: var(--ink-2); font-size: 10.5px; }
+.gloss-list dd { margin: 0; color: var(--ink-3); line-height: 1.5; }
+@media (max-width: 560px) {
+  .gloss-list { grid-template-columns: 1fr; gap: 2px; }
+  .gloss-list dd { margin-bottom: 4px; }
+  .probe-row .script-url { max-width: 150px; }
+}
 
 .file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .file-chip {
@@ -545,6 +597,45 @@ h1 em { font-style: normal; color: var(--brand); }
   padding: 1px 7px; border-radius: 20px; margin-left: 4px; vertical-align: 1px;
 }
 .finding-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* ── 바이브코더용 AI 프롬프트 바 ─────────────────────────────────────── */
+.vibe-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 14px; margin-bottom: 12px; flex-wrap: wrap;
+  border: 1px solid var(--brand-line); border-radius: var(--r-md);
+  background: linear-gradient(100deg, var(--brand-soft), transparent 72%), var(--surface);
+}
+.vibe-text { display: flex; flex-direction: column; gap: 3px; min-width: 200px; flex: 1 1 240px; }
+.vibe-text strong { font-size: 13.5px; letter-spacing: -0.01em; }
+.vibe-text span { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.btn-vibe {
+  display: inline-flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 12px 18px; border-radius: 11px; border: 0; cursor: pointer;
+  background: linear-gradient(135deg, #2BE0A8, #34C7F5); color: #04120E;
+  font-size: 13.5px; font-weight: 800; letter-spacing: -0.015em;
+  box-shadow: 0 6px 20px rgba(43, 224, 168, .28);
+  transition: transform .12s, box-shadow .12s;
+}
+.btn-vibe:hover { transform: translateY(-1px); box-shadow: 0 9px 26px rgba(43, 224, 168, .36); }
+.btn-vibe:active { transform: translateY(0); }
+.btn-vibe .vibe-ico { font-size: 16px; line-height: 1; }
+.btn-vibe .vibe-label { white-space: normal; text-align: left; }
+.btn-vibe .vibe-sub {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  opacity: .62; border-left: 1px solid rgba(0,0,0,.22); padding-left: 9px;
+}
+.btn-vibe.is-copied { background: linear-gradient(135deg, #9BE7C4, #6FE0FF); }
+.btn-vibe-sm {
+  margin-top: 10px; width: 100%; justify-content: center; padding: 9px 12px;
+  font-size: 12px; border-radius: 9px; box-shadow: none;
+}
+.btn-vibe-sm .vibe-ico { font-size: 13px; }
+.btn-vibe-sm[hidden] { display: none; }
+@media (max-width: 640px) {
+  .vibe-bar { padding: 11px; gap: 10px; }
+  .btn-vibe { width: 100%; justify-content: center; padding: 13px 14px; font-size: 13px; }
+  .btn-vibe .vibe-sub { display: none; }
+}
 .filter-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .fchip {
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-3);
@@ -615,6 +706,12 @@ h1 em { font-style: normal; color: var(--brand); }
   overflow-x: auto; white-space: pre; line-height: 1.6;
 }
 .finding-snippet .mask { color: var(--high); }
+.finding-easy {
+  font-size: 11.8px; color: var(--ink-2); line-height: 1.6; margin-bottom: 10px;
+  padding: 7px 10px; border-radius: 7px; background: var(--brand-soft);
+  border-left: 2px solid var(--brand);
+}
+.finding-easy b { color: var(--brand); font-size: 10px; letter-spacing: .02em; display: block; margin-bottom: 1px; }
 .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .fblock h4 {
   margin: 0 0 3px; font-size: 10px; letter-spacing: .08em; color: var(--ink-4);

@@ -1,0 +1,16 @@
+# onetap-shield-probe — Cloudflare Workers (Free)
+# 배포: 이 폴더에서 `npx wrangler deploy`
+# 실서버: https://onetap-shield-probe.onetap-ai.workers.dev
+
+name = "onetap-shield-probe"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[vars]
+# 이 출처에서 온 브라우저 요청만 받는다 (GitHub Pages 는 경로와 무관하게 출처가 하나다).
+# 로컬(localhost·127.0.0.1, 포트 무관)은 코드에서 따로 허용한다.
+ALLOWED_ORIGINS = "https://marcj81.github.io"

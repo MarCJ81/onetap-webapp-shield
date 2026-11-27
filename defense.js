@@ -16,7 +16,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var TOOL_URL = 'https://marcj81.github.io/onetap-webapp-shield/';
 
   /* ── CSP 서비스 카탈로그 ─────────────────────────────────────────────── */

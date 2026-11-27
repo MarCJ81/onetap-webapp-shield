@@ -81,7 +81,7 @@
       <thead><tr><th>기능</th><th>보내는 것</th><th>받는 곳</th></tr></thead>
       <tbody>
         <tr><td>GitHub 저장소 스캔</td><td>저장소 이름(owner/repo)·읽을 파일 경로</td><td>api.github.com, raw.githubusercontent.com (GitHub)</td></tr>
-        <tr><td>배포 URL 실측</td><td>입력한 URL과 일반 HTTP 요청</td><td>해당 사이트 (사용자가 지정한 서버)</td></tr>
+        <tr><td>배포 URL 실측</td><td>입력한 URL (저장·기록 없음)</td><td><code>onetap-shield-probe.onetap-ai.workers.dev</code> (Cloudflare Workers 무료 실측 서버) → 해당 사이트. 서버는 응답 <b>요약</b>(상태 코드·헤더·노출 파일 상태·가린 키 조각)만 돌려주고 페이지 본문을 저장하거나 다시 보여주지 않습니다. 로컬·사설 주소는 브라우저가 직접 확인합니다.</td></tr>
         <tr><td>의존성 CVE 조회</td><td>package.json의 패키지 이름·버전</td><td>api.osv.dev (OSV.dev, Google 오픈소스 취약점 DB)</td></tr>
         <tr><td>무료 AI 리뷰</td><td>스캔 요약 + 동의 시 문제 코드 일부(최대 약 1,400자, 키·토큰은 [REDACTED] 처리)</td><td>free-ai-taste.onetap-ai.workers.dev (Cloudflare Workers 기반 무료 체험)</td></tr>
         <tr><td>내 AI 키 연결(BYOK)</td><td>프롬프트 + 사용자가 넣은 키</td><td>선택한 제공자(Google Gemini / OpenAI / Anthropic) API</td></tr>
@@ -103,7 +103,7 @@
 
   <div class="card">
     <h2>스캔 결과의 정확성</h2>
-    <p>이 도구는 <b>정적 규칙 기반</b>입니다. 규칙에 있는 패턴만 찾으며, 실제 공격·런타임 검증(침투 테스트)이 아닙니다. "발견 없음"이 안전을 보장하지 않습니다. 브라우저 CORS 제한으로 읽지 못한 서버 헤더는 <b>미확인</b>으로 표시하며, 확인된 것으로 간주하지 않습니다.</p>
+    <p>이 도구는 <b>정적 규칙 기반</b>입니다. 규칙에 있는 패턴만 찾으며, 실제 공격·런타임 검증(침투 테스트)이 아닙니다. "발견 없음"이 안전을 보장하지 않습니다. 배포 URL 점검은 실측 서버가 실제 응답을 확인하지만, 실측 서버를 쓰지 못한 경우(로컬 주소·네트워크 문제) 브라우저 CORS 제한으로 읽지 못한 헤더는 <b>미확인</b>으로 표시하며 확인된 것으로 간주하지 않습니다.</p>
     <p>발견된 실제 키는 코드에서 지우기 전에 <b>먼저 폐기(revoke)</b>하세요.</p>
   </div>
 
@@ -112,7 +112,7 @@
     <p>이 사이트는 정적 파일만 배포하며 사용자 데이터를 보관하는 서버가 없습니다. 저장된 설정·키는 브라우저의 사이트 데이터 삭제 또는 각 기능의 '삭제' 버튼으로 바로 지울 수 있습니다.</p>
   </div>
 
-  <footer>시행일 2026-11-24 · 원탭 웹앱 실드 v1.0.0 · 이 페이지는 제품 동작을 설명하기 위해 작성되었습니다.</footer>
+  <footer>시행일 2026-11-27 · 원탭 웹앱 실드 v1.1.0 · 이 페이지는 제품 동작을 설명하기 위해 작성되었습니다.</footer>
 </div>
 </body>
 </html>

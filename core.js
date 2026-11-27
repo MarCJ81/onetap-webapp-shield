@@ -13,7 +13,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (RULES) {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var MAX_FINDINGS = 400;
   var MAX_PER_RULE_FILE = 40;
 
@@ -499,6 +499,27 @@
   function fixPrompt(finding, ctx) {
     ctx = ctx || {};
     var f = finding || {};
+    var en = !!(typeof window !== 'undefined' && window.ONETAP_I18N && window.ONETAP_I18N.lang && window.ONETAP_I18N.lang() === 'en');
+    if (en) {
+      var e = [
+        'Fix this security issue in my current code now. Keep every other behaviour and screen the same.', '',
+        '## Issue',
+        '- Type: ' + (f.name || f.ruleId) + ' (' + (f.sev || 'medium') + ')',
+        '- Where: ' + (f.path || 'code') + (f.line ? ':' + f.line : ''),
+        f.cwe ? '- Class: ' + f.cwe : '',
+        '- Risk: ' + (f.why || ''),
+        f.note ? '- Observed: ' + f.note : '', '',
+        '## Problem code', '```',
+        (f.snippet || '(the part in my code)'), '```', '',
+        '## Requirements',
+        '1. Replace it with a safe approach: ' + (f.fix || 'validate input and use a safe API'),
+        '2. Keep secrets out of the code — move them to environment variables and show the name and a .env example.',
+        '3. Fix the same problem elsewhere in the file too.',
+        '4. Show the full fixed file and summarise in three lines what changed and why.'
+      ];
+      if (ctx.extra) e.push('5. ' + ctx.extra);
+      return e.join('\n').replace(/\n{3,}/g, '\n\n');
+    }
     var head = '아래 보안 취약점을 지금 코드에서 고쳐줘. 다른 동작과 화면은 그대로 유지해.';
     var lines = [
       head, '',

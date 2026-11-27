@@ -87,6 +87,12 @@
       </div>
     </div>
 
+    <ol class="steps" id="flowSteps" aria-label="사용 순서">
+      <li class="step is-now" data-step="1"><b>1</b><span>링크·코드 넣기</span></li>
+      <li class="step" data-step="2"><b>2</b><span>위험 확인 (신호등)</span></li>
+      <li class="step" data-step="3"><b>3</b><span>AI 프롬프트 복사해서 고치기</span></li>
+    </ol>
+
     <div class="source-bar">
       <div class="seg mode-seg" id="modeSeg" role="group" aria-label="검사 소스">
         <button type="button" class="seg-btn is-on" data-mode="code" aria-pressed="true">코드 붙여넣기</button>
@@ -167,14 +173,14 @@
 
         <!-- URL -->
         <div class="panel mode-panel" id="mode-url" hidden>
-          <div class="panel-head"><h2>배포 URL 실측</h2><span class="muted">헤더 · 노출 파일</span></div>
+          <div class="panel-head"><h2>배포 URL 실측</h2><span class="muted">헤더 · 노출 파일 · 키</span></div>
           <div class="gh-form">
             <label class="field">
               <span>배포 주소</span>
               <input id="urlInput" type="url" placeholder="https://my-app.pages.dev" spellcheck="false" autocomplete="off" />
             </label>
             <button type="button" class="btn btn-primary btn-block" id="btnUrlScan">실측 점검</button>
-            <p class="micro" id="urlStatus">브라우저가 읽지 못하는 헤더는 <b>미확인</b>으로 남기고, 터미널 1초 명령을 함께 드립니다. 가짜 초록 체크는 없습니다.</p>
+            <p class="micro" id="urlStatus">무료 실측 서버(Cloudflare Worker)가 <b>실제 응답 헤더</b>·노출 파일·스크립트를 확인합니다. 로컬 주소는 브라우저가 직접 확인합니다.</p>
             <div class="url-result" id="urlResult" hidden></div>
           </div>
         </div>
@@ -208,6 +214,10 @@
           <div class="scope-note" id="scanScope">
             <b>검사 범위</b> 정적 규칙 분석 · 런타임 침투 테스트 아님
           </div>
+          <button type="button" class="btn-vibe btn-vibe-sm" id="btnVibePromptMini" hidden>
+            <span class="vibe-ico" aria-hidden="true">🤖</span>
+            <span class="vibe-label">AI 프롬프트 복사</span>
+          </button>
         </div>
 
         <div class="panel stack-panel" id="stackPanel" hidden>
@@ -224,6 +234,17 @@
           <div class="filter-chips" id="findingFilters" role="group" aria-label="심각도 필터"></div>
           <label class="check-inline"><input type="checkbox" id="optGroup" /> 파일별 묶기</label>
         </div>
+      </div>
+      <div class="vibe-bar" id="vibeBar" hidden>
+        <div class="vibe-text">
+          <strong>🤖 AI에게 고쳐달라고 할 프롬프트</strong>
+          <span id="vibeHint">발견 항목을 모아 한 번에 복사합니다. Cursor·Claude·ChatGPT에 붙여넣으면 코드를 고쳐줍니다.</span>
+        </div>
+        <button type="button" class="btn btn-vibe" id="btnVibePrompt">
+          <span class="vibe-ico" aria-hidden="true">🤖</span>
+          <span class="vibe-label">AI에게 고쳐달라고 할 프롬프트 통째로 복사</span>
+          <span class="vibe-sub">Cursor · Claude · GPT</span>
+        </button>
       </div>
       <div class="findings" id="findingsList"></div>
       <div class="empty" id="findingsEmpty">
@@ -456,7 +477,7 @@
   <div class="foot-inner">
     <div class="foot-brand">
       <strong>원탭 웹앱 실드</strong>
-      <span>ONETAP WEBAPP SHIELD · v1.0.0</span>
+      <span>ONETAP WEBAPP SHIELD · v1.1.0</span>
     </div>
     <p>정적 규칙 엔진은 Gitleaks·TruffleHog 패턴과 OWASP Cheat Sheet·Supabase 공식 가이드를 참고했습니다. 의존성 취약점은 <a href="https://osv.dev" target="_blank" rel="noopener noreferrer">OSV.dev</a>가 출처입니다.</p>
     <div class="foot-links">
@@ -489,7 +510,7 @@
       <ul>
         <li>붙여넣은 코드는 서버로 가지 않습니다. GitHub·URL·OSV·AI 조회만 해당 서비스에 직접 요청합니다.</li>
         <li>정적 분석은 <b>규칙에 있는 것</b>만 잡습니다. 로직·권한 설계 취약점은 사람이 봐야 합니다.</li>
-        <li>브라우저 CORS 때문에 다른 사이트의 보안 헤더는 읽지 못할 수 있습니다. 이때는 터미널 명령을 쓰세요.</li>
+        <li>배포 URL은 무료 실측 서버(Cloudflare Worker)가 실제 응답 헤더·노출 파일·스크립트를 확인합니다. 로컬 주소는 브라우저가 직접 확인합니다.</li>
         <li>발견한 실제 키는 <b>먼저 폐기(revoke)</b>하세요. 코드에서 지우는 것만으로는 이미 늦습니다.</li>
       </ul>
     </div>
@@ -497,7 +518,7 @@
 </dialog>
 
 <noscript>
-  <div class="noscript">이 도구는 브라우저에서 실행됩니다. JavaScript를 켜 주세요.</div>
+  <div class="noscript">이 도구는 브라우저에서 실행됩니다. JavaScript를 켜 주세요. / This tool runs in your browser. Please enable JavaScript.</div>
 </noscript>
 
 <script src="rules.js"></script>

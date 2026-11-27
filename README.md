@@ -37,7 +37,7 @@ AI 코딩 도구에 붙일 **수정 프롬프트**를 같이 만듭니다.
 | 코드 붙여넣기 | 입력 즉시 220ms 디바운스로 재검사 |
 | 파일 · 폴더 업로드 | 최대 40개, 텍스트만, 브라우저 안에서 읽음 |
 | GitHub 공개 저장소 | API로 트리 조회 + raw로 주요 파일 45개(`.env` · SQL · 설정 · API 우선) |
-| 배포 URL | 헤더 · 노출 파일(`.env`, `.git/HEAD`, `package.json` …) 실측 |
+| 배포 URL | 무료 실측 서버(Cloudflare Worker)로 **실제 응답 헤더 6종** · 노출 파일(`.env`, `.git/HEAD`, `package.json`) · 같은 도메인 스크립트의 키 노출까지 확인 |
 
 - **시크릿 38종**: OpenAI · Anthropic · Gemini · AWS · GitHub · Stripe · Supabase(`service_role` JWT 포함) ·
   Slack · Discord · PEM · DB 연결 문자열 · SendGrid · Resend · Twilio · Telegram · npm · Notion ·
@@ -50,7 +50,12 @@ AI 코딩 도구에 붙일 **수정 프롬프트**를 같이 만듭니다.
 - **파일 문맥 11종**: Supabase RLS/`using (true)`/View definer, Firestore 규칙, Stripe 웹훅 서명,
   보안 헤더, `.gitignore`, `.env` 커밋, CORS 설정, Basic 인증, 보안 TODO
 - 점수: 100점 만점, 심각도 가중(치명 30 · 높음 13 · 보통 5 · 낮음 2, 상한 적용), 등급 A+~F
-- **정직한 판정**: 브라우저 CORS로 읽지 못한 헤더는 "미확인"으로 남기고 초록 체크로 표시하지 않음
+- **정직한 판정**: 실측하지 못한 헤더는 "미확인"으로 남기고 초록 체크로 표시하지 않음
+
+### 1-2. 바이브코더용 V2
+- **전문 용어 옆에 쉬운 한 줄**: CSP·HSTS·X-Frame-Options·Referrer-Policy·Permissions-Policy·엔트로피·RLS·XSS·CORS마다 초보자용 설명을 함께 표시
+- **🤖 AI에게 고쳐달라고 할 프롬프트 통째로 복사**: 발견 항목을 우선순위대로 모아 Cursor·Claude·ChatGPT에 그대로 붙이면 고쳐지는 완성형 프롬프트(1클릭)
+- **3단계 흐름**: 1) 링크·코드 넣기 → 2) 위험 확인(신호등) → 3) AI 프롬프트 복사해서 고치기
 
 ### 2. 방어팩
 - 호스팅별 보안 헤더 파일 즉시 생성: **Cloudflare Pages / Netlify(`_headers`)**, **Vercel(`vercel.json`)**,
@@ -89,7 +94,8 @@ rules.js              시크릿 · SAST · 파일 규칙 정의 (86개)
 core.js               스캔 엔진 · 점수 · 프롬프트 · 리포트 · 배지
 defense.js            헤더 / CSP / 가드레일 / ZIP 생성기
 osv.js                OSV.dev 조회 + 내장 폴백
-remote.js             배포 URL 실측 + GitHub 저장소 스캔
+remote.js             배포 URL 실측(무료 Worker 프록시) + GitHub 저장소 스캔
+infra/probe-worker/   onetap-shield-probe · Cloudflare Worker 실측 프록시(worker.js · wrangler.toml)
 data.js               데모 프리셋 3종 (가짜 키는 실행 시 생성)
 app.js                UI 상태 · 렌더 · 이벤트
 engines/free-ai-client.js   무료 AI 클라이언트 (UMD)
@@ -118,8 +124,9 @@ assets/fonts/         IBM Plex Sans KR (OFL)
 
 ## 정직성 원칙
 
-1. **읽지 못한 것은 "미확인"**. 다른 오리진의 보안 헤더는 브라우저 CORS 때문에 읽을 수 없습니다.
-   이때 녹색 체크를 띄우지 않고 `curl` 한 줄 명령을 줍니다.
+1. **읽지 못한 것은 "미확인"**. 배포 URL은 무료 실측 서버(`onetap-shield-probe`)가 실제 헤더를 읽고,
+   실측 서버를 쓰지 못한 경우(로컬·사설 주소·네트워크)에만 브라우저 CORS 한계로 "미확인"이 됩니다.
+   그때도 녹색 체크를 띄우지 않고 `curl` 한 줄 명령을 줍니다.
 2. **가짜 초록 금지**. 노출 파일 프로브도 `exposed / blocked / unknown`을 구분합니다.
 3. **오프라인은 오프라인이라고**. CVE 폴백은 "내장 참고 DB"로 표시합니다.
 4. **시크릿은 마스킹**. 결과 · 리포트 · 수정 프롬프트 · AI 전송문 어디에도 원문 키를 넣지 않습니다.
@@ -131,7 +138,10 @@ assets/fonts/         IBM Plex Sans KR (OFL)
 
 - 정적 패턴 기반이라 **비즈니스 로직 취약점**(예: 남의 주문 id로 조회)은 잡지 못합니다.
 - GitHub 스캔은 저장소당 주요 파일 45개까지만 읽습니다(전체 파일 아님).
-- 배포 URL의 **서버 헤더**는 같은 오리진에서만 실제로 읽습니다(브라우저 보안 모델).
+- 배포 URL 실측은 GET·텍스트 응답만 봅니다. 스크립트는 같은 도메인 4개, 노출 파일 3종까지이며,
+  POST·로그인 뒤 화면·WebSocket은 확인하지 않습니다.
+- 실측 서버는 **열린 프록시가 아닙니다**: 허용 출처(`https://marcj81.github.io`·로컬)만 받고,
+  사설·메타데이터 주소(SSRF)를 거부하며, 원문 본문 대신 요약 JSON만 돌려줍니다.
 - OSV 조회는 `package.json` 선언 버전 기준입니다. 실제 설치본(`lock`)과 다를 수 있습니다.
 - 무료 AI는 하루 5회 · 700토큰이라 긴 코드 전체 리뷰에는 부족합니다(BYOK 권장).
 - 규칙은 계속 늘릴 수 있게 `rules.js` 한 곳에 모아 두었습니다.

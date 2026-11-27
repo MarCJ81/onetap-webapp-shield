@@ -26,6 +26,7 @@
     repo: { files: [], findings: [], label: '', branch: '', failed: 0 },
     urlProbe: null,
     urlFindings: [],
+    promptCopied: false,
     result: null,
     filter: 'all',
     open: Object.create(null),
@@ -171,7 +172,7 @@
     if (S.mode === 'code') return '붙여넣은 코드 · ' + (S.code.path || 'pasted.txt');
     if (S.mode === 'files') return '업로드한 파일 ' + S.uploaded.length + '개';
     if (S.mode === 'github') return 'GitHub ' + (S.repo.label || '저장소');
-    if (S.mode === 'url') return '배포 URL ' + (S.urlProbe ? S.urlProbe.target : '');
+    if (S.mode === 'url') return L('배포 URL ' + (S.urlProbe ? S.urlProbe.target : ''), 'Deploy URL ' + (S.urlProbe ? S.urlProbe.target : ''));
     return '';
   }
 
@@ -189,7 +190,7 @@
     if (S.mode === 'github') extra = S.repo.findings.slice();
     if (S.mode === 'url') extra = S.urlFindings.slice();
 
-    if (!files.length && !extra.length) {
+    if (!files.length && !extra.length && !(S.mode === 'url' && S.urlProbe && S.urlProbe.headerStatus === 'checked')) {
       S.result = null;
       renderAll();
       return;
@@ -221,7 +222,74 @@
   /* ── 렌더: 점수 ─────────────────────────────────────────────────────── */
 
   var SEV_KO = { critical: '치명적', high: '높음', medium: '보통', low: '낮음', info: '참고' };
+  var SEV_EN = { critical: 'critical', high: 'high', medium: 'medium', low: 'low', info: 'info' };
   var TONE_COLOR = { ok: '#2BE0A8', warn: '#F2C94C', bad: '#FF6B6B' };
+
+  /* 초보자용 쉬운 한 줄 — 카테고리별 */
+  var EASY_CAT = {
+    secret: '비밀번호·열쇠를 코드에 그대로 적어둔 상태예요. 저장소를 본 사람은 그 열쇠로 바로 들어올 수 있어요.',
+    xss: '남이 심은 스크립트가 내 사이트 방문자의 브라우저에서 그대로 실행되는 구멍이에요.',
+    auth: '로그인·권한 확인이 빠져 있어서, 남이 내 계정이나 관리자 기능을 그냥 쓸 수 있는 상태예요.',
+    db: '데이터베이스에 “내 것만 보기” 규칙이 없어 남의 데이터까지 열려 있는 상태예요.',
+    api: '서버가 들어오는 값을 그대로 믿고 처리해서, 남이 원하는 대로 조작할 수 있는 구멍이에요.',
+    crypto: '오래되거나 약한 암호 방식을 써서, 비밀번호·데이터가 쉽게 풀릴 수 있어요.',
+    config: '설정 한 줄이 빠져서 브라우저의 기본 방어가 꺼져 있는 상태예요.',
+    git: '저장소·배포본에 남으면 안 되는 파일이나 지도가 공개된 상태예요.',
+    deps: '쓰고 있는 라이브러리에 알려진 구멍이 있어요. 버전을 올리면 대부분 해결됩니다.',
+    static: '정적 페이지에서 바로 악용될 수 있는 기본 설정 문제예요.'
+  };
+  var EASY_CAT_EN = {
+    secret: 'A password or key written straight into the code. Anyone who sees the code can use that key.',
+    xss: 'A hole where someone else’s script runs inside your visitors’ browsers.',
+    auth: 'A login or permission check is missing, so others can use your account or admin features.',
+    db: 'The database has no “only my rows” rule, so other people’s data is open.',
+    api: 'The server trusts whatever comes in, so a stranger can make it do what they want.',
+    crypto: 'An old or weak way of protecting data, so passwords or data can be cracked.',
+    config: 'One setting is missing, so the browser’s built-in protection is off.',
+    git: 'A file or source map that should stay private is published with the site or repository.',
+    deps: 'A library you use has a known hole. Updating the version fixes most of them.',
+    static: 'A basic setting problem that can be abused right away on a static page.'
+  };
+  function easyCat(cat) { return L(EASY_CAT[cat] || '', EASY_CAT_EN[cat] || ''); }
+
+  /* 언어에 따라 다른 문장을 고른다(i18n 런타임은 DOM만 바꾸므로 JS 문자열은 직접). */
+  function L(ko, en) {
+    var i = window.ONETAP_I18N;
+    return (i && i.lang && i.lang() === 'en') ? en : ko;
+  }
+
+  function easyHeader(key) {
+    var en = {
+      'content-security-policy': 'A list of scripts the browser is allowed to run. Anything not on the list never runs.',
+      'strict-transport-security': 'Tells the browser to only ever reach this site over encrypted https.',
+      'x-content-type-options': 'Stops the browser from guessing a file type and running it as something else.',
+      'x-frame-options': 'Stops other sites from secretly framing your page like a picture inside theirs.',
+      'referrer-policy': 'Sets how much of your address and path is passed on when leaving for another site.',
+      'permissions-policy': 'A switch for whether this site may use the camera, location, microphone and so on.'
+    };
+    return L(window.REMOTE.HEADER_EASY[key] || '', en[key] || '');
+  }
+
+  /* ── 렌더: 3단계 흐름 ──────────────────────────────────────────────── */
+
+  function renderSteps() {
+    var box = $('#flowSteps');
+    if (!box) return;
+    var has = !!S.result;
+    var copied = has && S.promptCopied;
+    $$('.step', box).forEach(function (li) {
+      var n = Number(li.getAttribute('data-step'));
+      var state = '';
+      if (!has) state = n === 1 ? 'now' : '';
+      else if (!copied) state = n === 1 ? 'done' : n === 2 ? 'now' : '';
+      else state = n === 3 ? 'now' : 'done';
+      li.classList.toggle('is-now', state === 'now');
+      li.classList.toggle('is-done', state === 'done');
+      var num = $('b', li);
+      if (num) num.textContent = state === 'done' ? '✓' : String(n);
+    });
+  }
+
 
   function renderScore() {
     var r = S.result;
@@ -246,8 +314,8 @@
       label.textContent = '검사 대기';
       sub.textContent = '코드를 넣으면 즉시 채점합니다.';
       scope.textContent = '';
-      scope.appendChild(el('b', null, '검사 범위'));
-      scope.appendChild(document.createTextNode(' 정적 규칙 분석 · 런타임 침투 테스트 아님'));
+      scope.appendChild(el('b', null, L('검사 범위', 'Scope')));
+      scope.appendChild(document.createTextNode(L(' 정적 규칙 분석 · 런타임 침투 테스트 아님', ' static rule analysis · not a runtime penetration test')));
       return;
     }
 
@@ -261,36 +329,39 @@
     label.textContent = r.score.label;
 
     if (pts == null) {
-      sub.textContent = '이 오리진의 응답 헤더를 브라우저가 읽지 못했습니다. 아래 내용은 확인된 항목만 반영합니다.';
+      sub.textContent = L('이 오리진의 응답 헤더를 브라우저가 읽지 못했습니다. 아래 내용은 확인된 항목만 반영합니다.',
+        'The browser could not read this origin’s response headers, so only confirmed items are reflected below.');
     } else if (!r.totals.findings) {
-      sub.textContent = '규칙에 걸린 항목이 없습니다. 스캔 범위 밖 취약점은 별도 점검이 필요합니다.';
+      sub.textContent = L('규칙에 걸린 항목이 없습니다. 스캔 범위 밖 취약점은 별도 점검이 필요합니다.',
+        'Nothing matched the rules. Vulnerabilities outside the scan scope need a separate check.');
     } else {
       var parts = [];
-      if (r.counts.critical) parts.push('치명적 ' + r.counts.critical + '건');
-      if (r.counts.high) parts.push('높음 ' + r.counts.high + '건');
-      if (r.counts.medium) parts.push('보통 ' + r.counts.medium + '건');
-      if (r.counts.low) parts.push('낮음 ' + r.counts.low + '건');
-      sub.textContent = parts.join(' · ') + (r.counts.critical || r.counts.high ? ' — 배포 전 수정이 필요합니다.' : ' — 경미한 항목부터 정리하세요.');
+      if (r.counts.critical) parts.push(L('치명적 ' + r.counts.critical + '건', 'critical ' + r.counts.critical));
+      if (r.counts.high) parts.push(L('높음 ' + r.counts.high + '건', 'high ' + r.counts.high));
+      if (r.counts.medium) parts.push(L('보통 ' + r.counts.medium + '건', 'medium ' + r.counts.medium));
+      if (r.counts.low) parts.push(L('낮음 ' + r.counts.low + '건', 'low ' + r.counts.low));
+      sub.textContent = parts.join(' · ') + (r.counts.critical || r.counts.high
+        ? L(' — 배포 전 수정이 필요합니다.', ' — fix these before deploying.')
+        : L(' — 경미한 항목부터 정리하세요.', ' — work through the minor items.'));
     }
 
     ['critical', 'high', 'medium', 'low'].forEach(function (sev) {
       var c = el('span', 'sev-chip' + (r.counts[sev] ? '' : ' is-zero'));
       c.setAttribute('data-sev', sev);
       c.appendChild(el('b', null, String(r.counts[sev])));
-      c.appendChild(document.createTextNode(SEV_KO[sev]));
+      c.appendChild(document.createTextNode(L(SEV_KO[sev], SEV_EN[sev])));
       chips.appendChild(c);
     });
 
     var cats = Object.keys(r.byCat).map(function (k) { return { id: k, n: r.byCat[k] }; })
       .sort(function (a, b) { return b.n - a.n; }).slice(0, 6);
     if (!cats.length) {
-      bars.appendChild(el('span', 'cat-empty', '카테고리별 발견 없음'));
+      bars.appendChild(el('span', 'cat-empty', L('카테고리별 발견 없음', 'No findings by category')));
     } else {
       var max = cats[0].n;
       cats.forEach(function (c) {
         var row = el('div', 'cat-row');
-        row.appendChild(el('span', null, window.SHIELD.RULES.CATEGORIES[c.id] || c.id));
-        var track = el('div', 'cat-track');
+        row.appendChild(el('span', null, window.SHIELD.RULES.CATEGORIES[c.id] || c.id));        var track = el('div', 'cat-track');
         var fill = el('div', 'cat-fill');
         fill.style.width = Math.max(6, Math.round(c.n / max * 100)) + '%';
         track.appendChild(fill);
@@ -301,10 +372,13 @@
     }
 
     scope.textContent = '';
-    scope.appendChild(el('b', null, '검사 범위'));
-    var meta = ' 파일 ' + r.totals.files + '개 · ' + r.totals.lines + '줄 · ' + r.ms + 'ms · 정적 분석(런타임 아님)';
-    if (r.skipped.length) meta += ' · 제외 ' + r.skipped.length + '개';
-    if (S.mode === 'url') meta += ' · URL 모드(확인된 헤더·노출 파일만 반영)';
+    scope.appendChild(el('b', null, L('검사 범위', 'Scope')));
+    var meta = L(' 파일 ' + r.totals.files + '개 · ' + r.totals.lines + '줄 · ' + r.ms + 'ms · 정적 분석(런타임 아님)',
+      ' ' + r.totals.files + ' file(s) · ' + r.totals.lines + ' line(s) · ' + r.ms + 'ms · static analysis (not runtime)');
+    if (r.skipped.length) meta += L(' · 제외 ' + r.skipped.length + '개', ' · ' + r.skipped.length + ' excluded');
+    if (S.mode === 'url') meta += S.urlProbe && S.urlProbe.via === 'worker'
+      ? L(' · URL 실측(실제 응답 헤더·노출 파일·스크립트)', ' · live URL probe (real headers, exposed files, scripts)')
+      : L(' · URL 모드(확인된 항목만 반영)', ' · URL mode (only confirmed items)');
     scope.appendChild(document.createTextNode(meta));
   }
 
@@ -381,7 +455,7 @@
     head.appendChild(title);
 
     var right = el('span', 'finding-right');
-    right.appendChild(el('span', 'sev-label', SEV_KO[f.sev] || f.sev));
+    right.appendChild(el('span', 'sev-label', L(SEV_KO[f.sev] || f.sev, SEV_EN[f.sev] || f.sev)));
     right.appendChild(icon('M7 4l6 6-6 6', 13));
     var chev = right.lastChild;
     chev.setAttribute('class', 'chev');
@@ -392,6 +466,14 @@
     if (S.open[key]) art.classList.add('is-open');
 
     if (f.note) body.appendChild(el('p', 'finding-note', f.note));
+
+    var easy = f.easyKey ? easyHeader(f.easyKey) : (f.easy || easyCat(f.cat));
+    if (easy) {
+      var ep = el('p', 'finding-easy');
+      ep.appendChild(el('b', null, L('쉽게 말하면 ', 'In plain words: ')));
+      ep.appendChild(document.createTextNode(easy));
+      body.appendChild(ep);
+    }
 
     if (f.snippet) {
       var pre = el('pre', 'finding-snippet');
@@ -413,7 +495,7 @@
     var foot = el('div', 'finding-foot');
     var meta = el('div', 'finding-meta');
     if (f.cwe) meta.appendChild(el('span', null, f.cwe));
-    meta.appendChild(el('span', null, '규칙 ' + f.ruleId));
+    meta.appendChild(el('span', null, L('규칙 ', 'Rule ') + f.ruleId));
     if (f.kind === 'secret' && f.secretMasked) meta.appendChild(el('span', null, '값 ' + f.secretMasked));
     foot.appendChild(meta);
 
@@ -500,6 +582,8 @@
     renderFindings();
     renderReport();
     renderAiSummary();
+    renderSteps();
+    renderVibeBar();
   }
 
   /* ── 소스 UI ────────────────────────────────────────────────────────── */
@@ -519,7 +603,7 @@
     });
     $('#autoNote').textContent = mode === 'code' ? '입력하면 자동 검사'
       : mode === 'files' ? '파일을 넣으면 자동 검사'
-        : mode === 'github' ? 'GitHub API 조회' : '같은 오리진만 헤더 확인';
+        : mode === 'github' ? 'GitHub API 조회' : L('실제 응답을 실측', 'reads the live response');
     renderFileChips();
     rescan();
   }
@@ -691,29 +775,62 @@
 
   async function scanUrl() {
     var url = $('#urlInput').value.trim();
-    if (!url) { setStatus('#urlStatus', '배포 주소를 입력하세요.', 'error'); return; }
+    if (!url) { setStatus('#urlStatus', L('배포 주소를 입력하세요.', 'Enter the deployment address.'), 'error'); return; }
     var btn = $('#btnUrlScan');
     btn.disabled = true;
-    setStatus('#urlStatus', '헤더와 노출 파일을 확인하는 중…', 'busy');
+    setStatus('#urlStatus', L('실제 서버 응답을 확인하는 중… (헤더 · 노출 파일 · 스크립트)', 'Reading the live response… (headers, exposed files, scripts)'), 'busy');
     try {
-      var res = await window.REMOTE.probeUrl(url, { sameOriginBase: location.origin });
-      if (!res.ok) { setStatus('#urlStatus', res.message, 'error'); return; }
+      var res;
+      if (window.REMOTE.isPrivateTarget(url)) {
+        // 로컬·사설 주소는 실측 서버가 막는다(설계상). 브라우저가 직접 확인한다.
+        res = await window.REMOTE.probeUrl(url, { sameOriginBase: location.origin });
+        if (res.ok) res.workerNote = 'blocked';
+      } else {
+        res = await window.REMOTE.probeViaWorker(url);
+        if (!res.ok) {
+          var local = await window.REMOTE.probeUrl(url, { sameOriginBase: location.origin });
+          if (local.ok) {
+            local.workerNote = res.reason || 'failed';
+            res = local;
+          } else {
+            setStatus('#urlStatus', res.message || L('실측하지 못했습니다.', 'The check could not run.'), 'error');
+            return;
+          }
+        }
+      }
+      if (!res.ok) { setStatus('#urlStatus', res.message || L('실측하지 못했습니다.', 'The check could not run.'), 'error'); return; }
       S.urlProbe = res;
-      S.urlFindings = res.findings.slice();
+      S.urlFindings = (res.findings || []).slice();
+      S.promptCopied = false;
       setMode('url');
       renderUrlResult(res);
-      var head = res.headerStatus === 'checked'
-        ? '헤더를 실제로 읽었습니다 (점수 ' + res.headerScore + '/100).'
-        : (res.headerStatus === 'limited' || res.headerStatus === 'cors-blocked'
-          ? '헤더는 CORS로 읽지 못해 미확인입니다. 터미널 명령을 쓰세요.'
-          : '응답을 읽지 못했습니다.');
-      setStatus('#urlStatus', head + ' 결과는 스캔 탭에 반영됐습니다.', res.headerStatus === 'checked' ? 'ok' : 'busy');
-      if (res.headers['content-security-policy']) { /* noop */ }
+      setStatus('#urlStatus', urlStatusLine(res), res.headerStatus === 'checked' ? 'ok' : 'busy');
     } catch (e) {
-      setStatus('#urlStatus', '실측 중 오류: ' + e.message, 'error');
+      setStatus('#urlStatus', L('실측 중 오류: ', 'Check error: ') + e.message, 'error');
     } finally {
       btn.disabled = false;
     }
+  }
+
+  function urlStatusLine(res) {
+    var parts = [];
+    parts.push('HTTP ' + (res.httpStatus || '—'));
+    if (res.headerStatus === 'checked') {
+      var present = window.REMOTE.SECURITY_HEADERS.filter(function (h) { return res.headers[h.key]; }).length;
+      parts.push(L('보안 헤더 ' + present + '/6', 'security headers ' + present + '/6'));
+      var exposed = (res.probes || []).filter(function (p) { return p.status === 'exposed'; }).length;
+      parts.push(L('노출 파일 ' + exposed + '건', exposed + ' exposed file(s)'));
+      if ((res.secrets || []).length) parts.push(L('키 노출 ' + res.secrets.length + '건', res.secrets.length + ' secret(s)'));
+      if (res.elapsedMs) parts.push((res.elapsedMs / 1000).toFixed(2) + 's');
+    }
+    var how = res.via === 'worker'
+      ? L('실측 서버로 실제 응답을 읽었습니다', 'Read the real response through the probe server')
+      : res.workerNote === 'blocked'
+        ? L('로컬·사설 주소라 브라우저에서 직접 확인했습니다', 'Local or private address, so the browser checked it directly')
+        : res.headerStatus === 'checked'
+          ? L('브라우저에서 직접 확인했습니다', 'Checked directly in the browser')
+          : L('헤더는 CORS로 읽지 못해 미확인입니다', 'CORS blocked the header read, so they are unconfirmed');
+    return how + ' · ' + parts.join(' · ') + L('. 결과는 스캔 탭에 반영됐습니다.', '. The results are on the Scan tab.');
   }
 
   function renderUrlResult(res) {
@@ -721,23 +838,38 @@
     box.textContent = '';
     box.hidden = false;
 
-    var line = el('div', 'micro');
+    var line = el('div', 'micro url-line');
     line.appendChild(el('b', null, 'HTTP ' + (res.httpStatus || '—')));
-    line.appendChild(document.createTextNode(' · ' + (res.headerStatus === 'checked' ? '헤더 확인됨'
-      : res.headerStatus === 'limited' ? '헤더 제한적(CORS)' : res.headerStatus === 'cors-blocked' ? '헤더 미확인(CORS)' : '접속 실패')));
+    var how = res.via === 'worker' ? L(' · 실측 서버', ' · probe server')
+      : res.workerNote === 'blocked' ? L(' · 브라우저 직접(로컬)', ' · browser (local)')
+        : res.headerStatus === 'checked' ? L(' · 브라우저 직접', ' · browser')
+          : (res.headerStatus === 'limited' ? L(' · 헤더 제한적(CORS)', ' · headers limited (CORS)') : L(' · 헤더 미확인(CORS)', ' · headers unconfirmed (CORS)'));
+    line.appendChild(document.createTextNode(how));
     if (res.headerStatus === 'checked' && res.headerScore != null) {
-      line.appendChild(document.createTextNode(' · 헤더 점수 ' + res.headerScore + '/100'));
+      line.appendChild(document.createTextNode(L(' · 헤더 점수 ' + res.headerScore + '/100', ' · header score ' + res.headerScore + '/100')));
     }
+    if (res.elapsedMs) line.appendChild(document.createTextNode(' · ' + (res.elapsedMs / 1000).toFixed(2) + 's'));
     box.appendChild(line);
+
+    if (res.finalUrl && res.finalUrl !== res.target) {
+      box.appendChild(el('p', 'micro', L('최종 주소: ', 'Final URL: ') + res.finalUrl));
+    }
 
     var grid = el('div', 'hdr-grid');
     window.REMOTE.SECURITY_HEADERS.forEach(function (h) {
       var v = res.headers[h.key];
       var state = res.headerStatus === 'checked' ? (v ? 'ok' : 'miss') : 'unk';
       var item = el('div', 'hdr-item ' + state);
-      item.appendChild(el('span', 'hname', h.label));
-      item.appendChild(el('span', 'hstate', state === 'ok' ? '있음' : state === 'miss' ? '없음' : '미확인'));
-      if (v) item.title = v.slice(0, 300);
+      var top = el('div', 'hdr-main');
+      top.appendChild(el('span', 'hname', h.label));
+      top.appendChild(el('span', 'hstate', state === 'ok' ? L('있음', 'set') : state === 'miss' ? L('없음', 'missing') : L('미확인', 'unconfirmed')));
+      item.appendChild(top);
+      item.appendChild(el('span', 'heasy', easyHeader(h.key)));
+      if (v) {
+        var val = el('code', 'hval', v.length > 64 ? v.slice(0, 64) + '…' : v);
+        val.title = v.slice(0, 400);
+        item.appendChild(val);
+      }
       grid.appendChild(item);
     });
     box.appendChild(grid);
@@ -747,13 +879,180 @@
       var row = el('div', 'probe-row');
       row.appendChild(el('span', null, '/' + p.path));
       var st = el('span', 'pstat ' + p.status,
-        p.status === 'exposed' ? '노출' : p.status === 'blocked' ? '차단' : p.status === 'unconfirmed' ? '확인 불가' : '미확인');
+        p.status === 'exposed' ? L('노출', 'exposed') : p.status === 'blocked' ? L('차단', 'blocked') : p.status === 'unconfirmed' ? L('확인 불가', 'unconfirmed') : L('미확인', 'unknown'));
       row.appendChild(st);
-      if (p.httpStatus) row.appendChild(el('span', null, String(p.httpStatus)));
+      if (p.httpStatus) row.appendChild(el('span', 'pcode', String(p.httpStatus)));
       probes.appendChild(row);
     });
     box.appendChild(probes);
+    box.appendChild(el('p', 'micro easy-note', L('.env·.git·package.json은 주소창에 그대로 쳐서 실제로 내려받아지는지 본 결과예요. “차단”은 404·403으로 막혔다는 뜻입니다.',
+      '.env, .git and package.json were requested directly to see whether they download. “blocked” means the host answered 404 or 403.')));
+
+    if (res.via === 'worker') {
+      var facts = el('div', 'micro url-facts');
+      facts.appendChild(el('b', null, L('함께 본 것', 'Also checked')));
+      var scripts = (res.scripts || []).length;
+      facts.appendChild(document.createTextNode(L(' 스크립트 ' + scripts + '개 · HTML ' + Math.round((res.page && res.page.htmlBytes || 0) / 1024) + 'KB · 키 노출 ' + ((res.secrets || []).length) + '건',
+        ' ' + scripts + ' script(s) · HTML ' + Math.round((res.page && res.page.htmlBytes || 0) / 1024) + 'KB · ' + ((res.secrets || []).length) + ' secret(s)')));
+      box.appendChild(facts);
+      (res.scripts || []).forEach(function (s) {
+        var row = el('div', 'probe-row');
+        row.appendChild(el('span', 'script-url', s.url.replace(/^https?:\/\/[^/]+/, '')));
+        row.appendChild(el('span', 'pcode', String(s.httpStatus || '—')));
+        row.appendChild(el('span', 'pstat ' + (s.secrets ? 'exposed' : 'blocked'), s.secrets ? L('키 ' + s.secrets + '건', s.secrets + ' secret(s)') : L('키 없음', 'no secrets')));
+        box.appendChild(row);
+      });
+    }
+
+    box.appendChild(glossaryNode());
+
     if (res.note) box.appendChild(el('p', 'micro', res.note));
+    if (res.workerNote && res.workerNote !== 'blocked') {
+      box.appendChild(el('p', 'micro', L('실측 서버를 쓰지 못해 브라우저에서 확인했습니다: ', 'The probe server was unavailable, so the browser checked: ') + res.workerNote));
+    }
+  }
+
+  function glossaryNode() {
+    var det = document.createElement('details');
+    det.className = 'glossary';
+    var sum = document.createElement('summary');
+    sum.textContent = L('말이 어려우면 — 용어 쉬운 설명', 'Plain-language glossary');
+    det.appendChild(sum);
+    var list = el('dl', 'gloss-list');
+    GLOSSARY().forEach(function (g) {
+      list.appendChild(el('dt', null, g.term));
+      list.appendChild(el('dd', null, g.text));
+    });
+    det.appendChild(list);
+    return det;
+  }
+
+  function GLOSSARY() {
+    var ko = [
+      ['CSP', '브라우저가 실행해도 되는 스크립트를 미리 정해두는 허용 목록. 모르는 스크립트는 실행되지 않아요.'],
+      ['HSTS', '이 사이트에는 앞으로 항상 https로만 접속하라고 브라우저에 기억시키는 장치.'],
+      ['X-Frame-Options', '다른 사이트가 내 화면을 몰래 액자처럼 끼워 넣는 걸 막는 잠금장치.'],
+      ['X-Content-Type-Options', '파일 종류를 브라우저가 마음대로 추측해서 실행하지 않게 하는 잠금장치.'],
+      ['Referrer-Policy', '다른 사이트로 넘어갈 때 내 주소·경로를 얼마나 알려줄지 정하는 규칙.'],
+      ['Permissions-Policy', '카메라·위치·마이크 같은 기능을 이 사이트가 쓸 수 있는지 정하는 스위치.'],
+      ['엔트로피(Entropy)', '문자열이 얼마나 무작위로 보이는지 재는 값. 높으면 진짜 키일 확률이 커서 시크릿으로 잡아요.'],
+      ['RLS', '데이터베이스에서 “내 데이터만 보기” 같은 행(row) 단위 접근 규칙. 없으면 남의 데이터까지 열려요.'],
+      ['XSS', '남이 심어둔 스크립트가 내 사이트 방문자의 브라우저에서 그대로 실행되는 구멍.'],
+      ['CORS', '브라우저가 다른 사이트의 응답을 읽을 수 있는지 정하는 규칙. 전체 허용이면 아무 사이트나 내 데이터를 읽어갈 수 있어요.'],
+      ['eval', '문자열을 코드로 실행하는 기능. 남이 넣은 문자열이 코드로 실행될 수 있어 위험해요.'],
+      ['소스맵(sourcemap)', '원본 소스를 되살릴 수 있는 지도. 배포본에 함께 올라가면 코드가 그대로 드러나요.'],
+      ['노출 파일', '.env·.git처럼 외부에 있으면 안 되는 파일이 실제로 내려받아지는 상태.'],
+      ['보안 점수', '발견된 문제의 심각도로 계산한 100점 만점 점수. 치명적일수록 크게 깎여요.']
+    ];
+    var en = [
+      ['CSP', 'A list of scripts the browser may run. Anything not listed never runs.'],
+      ['HSTS', 'Tells the browser to only ever use https for this site.'],
+      ['X-Frame-Options', 'Stops another site from secretly framing your page inside theirs.'],
+      ['X-Content-Type-Options', 'Stops the browser guessing a file type and running it as something else.'],
+      ['Referrer-Policy', 'Sets how much of your address and path travels with a visitor to another site.'],
+      ['Permissions-Policy', 'A switch for camera, location, microphone and other browser features.'],
+      ['Entropy', 'A measure of how random a string looks. High entropy means it is probably a real key, so it is flagged.'],
+      ['RLS', 'Row-level security in a database — rules like “only my rows”. Without it, everyone sees everything.'],
+      ['XSS', 'A hole where someone else’s script runs inside your visitors’ browsers.'],
+      ['CORS', 'Rules for which other sites may read your responses. Wide open means anyone can read your data.'],
+      ['eval', 'Runs a string as code. If a stranger’s string reaches it, their code runs.'],
+      ['sourcemap', 'A map that restores your original source. Shipping it exposes your code.'],
+      ['exposed file', 'A file that should never be public, such as .env or .git, actually downloading from your site.'],
+      ['security score', 'A score out of 100 from the severity of what was found. Critical issues cost the most.']
+    ];
+    var list = (window.ONETAP_I18N && window.ONETAP_I18N.lang && window.ONETAP_I18N.lang() === 'en') ? en : ko;
+    return list.map(function (r) { return { term: r[0], text: r[1] }; });
+  }
+
+  /* ── AI에게 고쳐달라고 할 프롬프트(여러 건 한 번에) ─────────────────── */
+
+  function vibeFixPrompt() {
+    var r = S.result;
+    if (!r || !r.findings.length) return '';
+    var items = r.findings.filter(function (f) { return f.sev !== 'info'; }).slice(0, 8);
+    if (!items.length) items = r.findings.slice(0, 8);
+    var en = !!(window.ONETAP_I18N && window.ONETAP_I18N.lang && window.ONETAP_I18N.lang() === 'en');
+    var sevName = function (s) { return en ? (SEV_EN[s] || s) : (SEV_KO[s] || s); };
+    var out = [];
+
+    out.push(en
+      ? 'Fix the security issues below in my current project code. Keep every screen and behaviour the same, and show me each changed file in full plus a three-line summary of what changed and why.'
+      : '아래 보안 점검 결과를 보고 지금 내 프로젝트 코드를 고쳐줘. 다른 화면과 동작은 그대로 유지하고, 고친 파일 전체 코드와 무엇이 왜 바뀌었는지 3줄 요약을 보여줘.');
+    out.push('');
+
+    out.push(en ? '## What was checked' : '## 점검 대상');
+    out.push('- ' + (sourceLabel() || S.code.path || 'my project'));
+    if (S.mode === 'url' && S.urlProbe) {
+      var present = window.REMOTE.SECURITY_HEADERS.filter(function (h) { return S.urlProbe.headers[h.key]; }).length;
+      out.push(en
+        ? '- Live response: HTTP ' + S.urlProbe.httpStatus + ' · security headers ' + present + '/6 · checked with a real request'
+        : '- 실제 응답: HTTP ' + S.urlProbe.httpStatus + ' · 보안 헤더 ' + present + '/6 · 실제 요청으로 확인');
+    }
+    out.push(en
+      ? '- Security score: ' + (r.score.points == null ? 'not scored' : r.score.points + '/100') + ' (' + r.score.grade + ' · ' + r.score.label + ')'
+      : '- 보안 점수: ' + (r.score.points == null ? '미채점' : r.score.points + '/100') + ' (' + r.score.grade + ' · ' + r.score.label + ')');
+    var counts = [];
+    ['critical', 'high', 'medium', 'low'].forEach(function (s) { if (r.counts[s]) counts.push(sevName(s) + ' ' + r.counts[s]); });
+    out.push((en ? '- Findings: ' : '- 발견: ') + (counts.join(' · ') || (en ? 'none' : '없음')));
+    out.push('');
+
+    out.push(en ? '## What to fix (in this order)' : '## 고칠 것 (위에서부터 순서대로)');
+    items.forEach(function (f, i) {
+      out.push('');
+      out.push('### ' + (i + 1) + '. [' + sevName(f.sev) + '] ' + f.name);
+      out.push((en ? '- Where: ' : '- 위치: ') + (f.path || 'code') + (f.line ? ':' + f.line : ''));
+      if (f.why) out.push((en ? '- Why it matters: ' : '- 왜 문제: ') + f.why);
+      if (f.fix) out.push((en ? '- How to fix: ' : '- 고치는 법: ') + f.fix);
+      if (f.easy && !en) out.push('- 쉽게 말하면: ' + f.easy);
+      if (f.snippet) {
+        out.push(en ? '- Observed:' : '- 관찰:');
+        out.push('```');
+        out.push(f.snippet.slice(0, 400));
+        out.push('```');
+      }
+    });
+    out.push('');
+
+    out.push(en ? '## Steps' : '## 작업 순서');
+    out.push(en ? '1. Start with the critical and high items.' : '1. 치명적·높음 항목부터 고쳐줘.');
+    out.push(en ? '2. Add missing security headers in this project’s hosting config (for example _headers, vercel.json, next.config.js), not in the HTML.'
+      : '2. 빠진 보안 헤더는 HTML이 아니라 이 프로젝트 호스팅 설정 파일(_headers, vercel.json, next.config.js 등)에 추가해줘.');
+    out.push(en ? '3. Move secrets out of the code into environment variables and leave only the names in .env.example. If a key was public, assume it is compromised and tell me to revoke it.'
+      : '3. 비밀값은 코드에서 빼서 환경변수로 옮기고 .env.example에는 이름만 남겨줘. 이미 공개된 키는 폐기(revoke)해야 한다고 알려줘.');
+    out.push(en ? '4. Confirm the result still builds and runs, and list any file I must change outside the code (hosting settings, DNS, dashboard).'
+      : '4. 고친 뒤에도 빌드·실행이 되는지 확인하고, 코드 밖에서 내가 바꿔야 할 것(호스팅 설정·DNS·대시보드)이 있으면 알려줘.');
+    out.push('');
+    out.push(en ? '## Do not' : '## 하지 말 것');
+    out.push(en ? '- Do not change other screens, copy or behaviour.' : '- 다른 화면·문구·동작을 바꾸지 마.');
+    out.push(en ? '- Do not put any new secret back into the code.' : '- 새 비밀값을 코드에 넣지 마.');
+
+    var text = out.join('\n');
+    return text.length > 6000 ? text.slice(0, 6000) + '\n…' : text;
+  }
+
+  function renderVibeBar() {
+    var bar = $('#vibeBar');
+    var mini = $('#btnVibePromptMini');
+    var has = !!(S.result && S.result.findings.length);
+    if (bar) bar.hidden = !has;
+    if (mini) {
+      mini.hidden = !has;
+      mini.classList.toggle('is-copied', S.promptCopied);
+      var mlab = $('.vibe-label', mini);
+      if (mlab) mlab.textContent = S.promptCopied ? L('복사 완료', 'Copied') : L('AI 프롬프트 복사', 'Copy AI prompt');
+    }
+    if (!has) return;
+    var hint = $('#vibeHint');
+    if (hint) {
+      hint.textContent = L('발견 ' + S.result.findings.length + '건을 한 번에 고치는 프롬프트예요. Cursor·Claude·ChatGPT에 그대로 붙여넣으면 코드를 고쳐줍니다.',
+        'One prompt that fixes all ' + S.result.findings.length + ' findings. Paste it into Cursor, Claude or ChatGPT.');
+    }
+    var btn = $('#btnVibePrompt');
+    if (btn) {
+      btn.classList.toggle('is-copied', S.promptCopied);
+      var lab = $('.vibe-label', btn);
+      if (lab) lab.textContent = S.promptCopied ? L('복사 완료 — AI에 붙여넣으세요', 'Copied — paste it into your AI') : L('AI에게 고쳐달라고 할 프롬프트 통째로 복사', 'Copy the whole fix prompt for your AI');
+    }
   }
 
   /* ── 방어팩 ─────────────────────────────────────────────────────────── */
@@ -991,10 +1290,10 @@
       return;
     }
     var rows = [
-      ['발견', r.totals.findings + '건'],
-      ['치명적·높음', (r.counts.critical + r.counts.high) + '건'],
-      ['파일', r.totals.files + '개'],
-      ['스택', r.stack.map(function (s) { return s.label; }).join(', ') || '미상']
+      [L('발견', 'Findings'), L(r.totals.findings + '건', r.totals.findings + ' item(s)')],
+      [L('치명적·높음', 'Critical & high'), L((r.counts.critical + r.counts.high) + '건', (r.counts.critical + r.counts.high) + ' item(s)')],
+      [L('파일', 'Files'), L(r.totals.files + '개', String(r.totals.files))],
+      [L('스택', 'Stack'), r.stack.map(function (s) { return s.label; }).join(', ') || L('미상', 'unknown')]
     ];
     rows.forEach(function (p) {
       var row = el('div', 'ai-ctx-row');
@@ -1002,7 +1301,9 @@
       row.appendChild(el('b', null, p[1]));
       box.appendChild(row);
     });
-    var top = r.findings.slice(0, 3).map(function (f) { return f.name; });
+    var top = r.findings.slice(0, 3).map(function (f) {
+      return (window.ONETAP_I18N && window.ONETAP_I18N.t) ? window.ONETAP_I18N.t(f.name) : f.name;
+    });
     if (top.length) box.appendChild(el('p', 'ai-ctx-row muted', top.join(' · ')));
   }
 
@@ -1177,8 +1478,10 @@
     if (S.mode === 'url' && S.urlProbe) {
       if (S.urlProbe.headerStatus !== 'checked') extras.push('서버 보안 헤더: 브라우저 CORS로 미확인 (터미널 curl로 확인 필요)');
       else extras.push('서버 보안 헤더 점수: ' + S.urlProbe.headerScore + '/100');
+      if (S.urlProbe.via === 'worker') extras.push('실측 방식: 실측 서버(onetap-shield-probe)로 실제 응답 확인');
       var exposed = (S.urlProbe.probes || []).filter(function (p) { return p.status === 'exposed'; });
       if (exposed.length) extras.push('공개된 파일: ' + exposed.map(function (p) { return p.path; }).join(', '));
+      if ((S.urlProbe.secrets || []).length) extras.push('배포 화면에서 발견한 키 노출: ' + S.urlProbe.secrets.length + '건(값은 가림)');
     }
     if (S.mode === 'github') extras.push('GitHub 저장소: ' + S.repo.label + ' (' + S.repo.branch + ') · 읽은 파일 ' + S.repo.files.length + '개');
     if (S.osv && S.osv.totalVulns) extras.push('OSV.dev 취약점 ' + S.osv.totalVulns + '건 (' + (S.osv.status === 'fallback' ? '내장 DB' : '실시간') + ')');
@@ -1204,12 +1507,12 @@
     badge.innerHTML = svg;
 
     var rows = [
-      ['점수', (pts == null ? '미확인' : pts + ' / 100')],
-      ['등급', S.result.score.grade],
-      ['발견', S.result.totals.findings + '건'],
-      ['파일', S.result.totals.files + '개'],
-      ['스택', S.result.stack.map(function (s) { return s.label; }).join(', ') || '미상'],
-      ['대상', sourceLabel() || '—']
+      [L('점수', 'Score'), (pts == null ? L('미확인', 'unconfirmed') : pts + ' / 100')],
+      [L('등급', 'Grade'), S.result.score.grade],
+      [L('발견', 'Findings'), L(S.result.totals.findings + '건', S.result.totals.findings + ' item(s)')],
+      [L('파일', 'Files'), L(S.result.totals.files + '개', String(S.result.totals.files))],
+      [L('스택', 'Stack'), S.result.stack.map(function (s) { return s.label; }).join(', ') || L('미상', 'unknown')],
+      [L('대상', 'Target'), sourceLabel() || '—']
     ];
     rows.forEach(function (r) {
       var row = el('div', 'fact-row');
@@ -1426,6 +1729,26 @@
       })[0];
       if (!f) return;
       copyText(window.SHIELD.fixPrompt(f), '수정 프롬프트를 복사했습니다 — AI 코딩 도구에 붙여넣으세요');
+    });
+
+    // AI에게 고쳐달라고 할 프롬프트(여러 건 한 번에)
+    function copyVibe() {
+      var text = vibeFixPrompt();
+      if (!text) { toast('먼저 스캔하세요'); return; }
+      copyText(text, L('AI 수정 프롬프트를 복사했습니다 — Cursor·Claude·ChatGPT에 붙여넣으세요', 'Fix prompt copied — paste it into Cursor, Claude or ChatGPT'));
+      S.promptCopied = true;
+      renderVibeBar();
+      renderSteps();
+    }
+    var vibeBtn = $('#btnVibePrompt');
+    if (vibeBtn) vibeBtn.addEventListener('click', copyVibe);
+    var vibeMini = $('#btnVibePromptMini');
+    if (vibeMini) vibeMini.addEventListener('click', copyVibe);
+
+    // 언어를 바꾸면 JS로 만든 문장(상태·프롬프트 버튼·용어)도 다시 그린다.
+    document.addEventListener('onetap:lang', function () {
+      renderAll();
+      if (S.urlProbe) renderUrlResult(S.urlProbe);
     });
 
     // 방어팩
