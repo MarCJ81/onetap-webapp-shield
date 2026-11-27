@@ -296,7 +296,7 @@
         ruleId: 'remote-live-secret-' + s.id, name: (en ? 'Key exposed in the deployed page: ' : '배포 화면에 키 노출: ') + label,
         sev: s.sev === 'low' ? 'low' : 'critical', cat: 'secret', kind: 'remote',
         path: s.where === 'html' ? target : (s.where || target), line: 1 + i,
-        snippet: s.masked || '',
+        snippet: s.masked || '', secretMasked: s.masked || '',
         note: s.where === 'html' ? '배포된 HTML 안에서 발견했습니다(Worker 실측).' : '같은 도메인의 스크립트에서 발견했습니다.',
         why: '누구나 볼 수 있는 화면에 키가 박혀 있으면, 그 키로 바로 서비스를 호출해 요금을 쓰게 만들 수 있습니다.',
         fix: '해당 키를 즉시 폐기(revoke)하고, 서버나 환경변수에서만 쓰도록 옮기세요. 프론트에 넣어야 하는 공개 키(anon key)라면 RLS로 권한을 막아야 합니다.',
