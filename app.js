@@ -827,9 +827,11 @@
       ? L('실측 서버로 실제 응답을 읽었습니다', 'Read the real response through the probe server')
       : res.workerNote === 'blocked'
         ? L('로컬·사설 주소라 브라우저에서 직접 확인했습니다', 'Local or private address, so the browser checked it directly')
-        : res.headerStatus === 'checked'
-          ? L('브라우저에서 직접 확인했습니다', 'Checked directly in the browser')
-          : L('헤더는 CORS로 읽지 못해 미확인입니다', 'CORS blocked the header read, so they are unconfirmed');
+        : res.workerNote
+          ? L('실측 서버에 연결하지 못해 브라우저에서 직접 확인했습니다', 'The probe server was unreachable, so the browser checked directly')
+          : res.headerStatus === 'checked'
+            ? L('브라우저에서 직접 확인했습니다', 'Checked directly in the browser')
+            : L('헤더는 CORS로 읽지 못해 미확인입니다', 'CORS blocked the header read, so they are unconfirmed');
     return how + ' · ' + parts.join(' · ') + L('. 결과는 스캔 탭에 반영됐습니다.', '. The results are on the Scan tab.');
   }
 
